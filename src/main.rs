@@ -1,8 +1,8 @@
 use std::f32::consts::PI;
 
 use bevy::{
-    prelude::*, sprite::collide_aabb::collide,
-    window::PrimaryWindow, render::texture::ImageSampler,
+    audio::PlaybackMode, prelude::*, render::texture::ImageSampler, sprite::collide_aabb::collide,
+    window::PrimaryWindow,
 };
 use bevy_prng::ChaCha8Rng;
 use bevy_rand::{prelude::*, resource::GlobalEntropy};
@@ -28,12 +28,16 @@ const SCORE_COLOR: Color = Color::rgb(1.0, 0.5, 0.5);
 const GRAVITY: f32 = 9.82 * 100.0;
 
 fn main() {
+    // When building for WASM, print panics to the browser console
+    #[cfg(target_arch = "wasm32")]
+    console_error_panic_hook::set_once();
+
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(EntropyPlugin::<ChaCha8Rng>::default())
         .insert_resource(Scoreboard { score: 0 })
         .insert_resource(ClearColor(BACKGROUND_COLOR))
-        .add_event::<CollisionEvent>()
+        .add_event::<BalloonPopEvent>()
         // Configure how frequently our gameplay systems are run
         .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
         .add_systems(Startup, setup)
@@ -44,12 +48,18 @@ fn main() {
                 check_for_collisions,
                 apply_velocity.before(check_for_collisions),
                 apply_gravity.after(apply_velocity),
-                //play_collision_sound.after(check_for_collisions),
+                play_collision_sound.after(check_for_collisions),
             ),
         )
         .add_systems(
             Update,
-            (handle_mouse, rotate_arrows, spritemap_fix, update_scoreboard, bevy::window::close_on_esc),
+            (
+                handle_mouse,
+                rotate_arrows,
+                spritemap_fix,
+                update_scoreboard,
+                bevy::window::close_on_esc,
+            ),
         )
         .run();
 }
@@ -73,10 +83,12 @@ struct Velocity(Vec2);
 struct Collider;
 
 #[derive(Event, Default)]
-struct CollisionEvent;
+struct BalloonPopEvent;
 
 #[derive(Resource)]
-struct CollisionSound(Handle<AudioSource>);
+struct Sounds {
+    balloon_pop: Handle<AudioSource>,
+}
 
 // This bundle is a collection of the components that define a "wall" in our game
 #[derive(Bundle)]
@@ -166,8 +178,10 @@ fn setup(
     commands.spawn(Camera2dBundle::default());
 
     // Sound
-    let ball_collision_sound = asset_server.load("sounds/laser.ogg");
-    commands.insert_resource(CollisionSound(ball_collision_sound));
+    let balloon_pop_sound = asset_server.load("sounds/balloon_pop.ogg");
+    commands.insert_resource(Sounds {
+        balloon_pop: balloon_pop_sound,
+    });
 
     // Monkey
     commands.spawn((
@@ -179,13 +193,12 @@ fn setup(
             texture: asset_server.load("textures/monkey.png"),
             transform: Transform {
                 translation: Vec3::new(LEFT_WALL + 120.0, 60.0, 0.0),
-                scale: Vec3::new(128.0, 128.0, 0.0),
+                scale: Vec3::new(128.0, 128.0, 1.0),
                 ..default()
             },
             ..default()
         },
         Monkey,
-        Collider,
     ));
 
     // Scoreboard
@@ -245,10 +258,7 @@ fn setup(
     }
 }
 
-fn spritemap_fix(
-    mut ev_asset: EventReader<AssetEvent<Image>>,
-    mut assets: ResMut<Assets<Image>>,
-) {
+fn spritemap_fix(mut ev_asset: EventReader<AssetEvent<Image>>, mut assets: ResMut<Assets<Image>>) {
     for ev in ev_asset.iter() {
         if let AssetEvent::Created { handle } = ev {
             if let Some(texture) = assets.get_mut(handle) {
@@ -273,7 +283,8 @@ fn handle_mouse(
                 .viewport_to_world(camera_transform, mouse_pos)
                 .map(|ray| ray.origin.truncate())
             {
-                let monkey_pos = query.get_single().unwrap().translation;
+                let monkey_pos =
+                    query.get_single().unwrap().translation + Vec3::new(22.0, 18.0, 0.0);
 
                 let dir = monkey_pos.truncate() - mouse_pos;
                 let speed = dir.length();
@@ -285,8 +296,8 @@ fn handle_mouse(
                             ..Default::default()
                         },
                         texture: asset_server.load("textures/arrow.png"),
-                        transform: Transform::from_translation(mouse_pos.extend(0.0))
-                            .with_scale(Vec3::new(32.0, 32.0, 0.0)),
+                        transform: Transform::from_translation(monkey_pos)
+                            .with_scale(Vec3::new(32.0, 32.0, 1.0)),
                         ..default()
                     },
                     Arrow,
@@ -328,7 +339,7 @@ fn check_for_collisions(
     mut scoreboard: ResMut<Scoreboard>,
     arrow_query: Query<&Transform, With<Arrow>>,
     collider_query: Query<(Entity, &Transform, Option<&Balloon>), With<Collider>>,
-    mut collision_events: EventWriter<CollisionEvent>,
+    mut pop_events: EventWriter<BalloonPopEvent>,
 ) {
     for arrow_transform in &arrow_query {
         let arrow_size = arrow_transform.scale.truncate();
@@ -341,15 +352,11 @@ fn check_for_collisions(
                 transform.translation,
                 transform.scale.truncate(),
             );
-            if collision.is_some() {
-                // Sends a collision event so that other systems can react to the collision
-                collision_events.send_default();
+            if collision.is_some() && collided_balloon.is_some() {
+                pop_events.send_default();
 
-                // Bricks should be despawned and increment the scoreboard on collision
-                if collided_balloon.is_some() {
-                    scoreboard.score += 1;
-                    commands.entity(collider_entity).despawn();
-                }
+                scoreboard.score += 1;
+                commands.entity(collider_entity).despawn();
             }
         }
     }
@@ -357,17 +364,16 @@ fn check_for_collisions(
 
 fn play_collision_sound(
     mut commands: Commands,
-    mut collision_events: EventReader<CollisionEvent>,
-    sound: Res<CollisionSound>,
+    collision_events: EventReader<BalloonPopEvent>,
+    sounds: Res<Sounds>,
 ) {
-    // Play a sound once per frame if a collision occurred.
     if !collision_events.is_empty() {
-        // This prevents events staying active on the next frame.
-        collision_events.clear();
         commands.spawn(AudioBundle {
-            source: sound.0.clone(),
-            // auto-despawn the entity when playback finishes
-            settings: PlaybackSettings::DESPAWN,
+            source: sounds.balloon_pop.clone(),
+            settings: PlaybackSettings {
+                mode: PlaybackMode::Despawn,
+                ..default()
+            },
         });
     }
 }
