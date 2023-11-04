@@ -1,6 +1,9 @@
 version: '3'
 
 tasks:
+  install-cargo:
+    cmds:
+      - curl https://sh.rustup.rs -sSf | sh
   export-web:
     cmds:
       - cargo build 
