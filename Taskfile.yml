@@ -1,12 +1,6 @@
 version: '3'
 
 tasks:
-  install-cargo:
-    cmds:
-      - echo "Installing Rustup..."
-      - curl https://sh.rustup.rs -sSf | sh -s -- -y
-      - source "$HOME/.cargo/env"
-      - cargo install wasm-bindgen-cli
   export-web:
     cmds:
       - cargo build 
@@ -17,6 +11,11 @@ tasks:
         --out-dir ./out/game/ 
         --target web 
         ./target/wasm32-unknown-unknown/release/bloons.wasm
+      - rm -rd out
       - cp -r assets out/
       - cp -r web/ out/
     silent: true
+  deploy-web:
+    deps: [export-web]
+    cmds:
+      - fly deploy
