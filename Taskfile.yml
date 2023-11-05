@@ -4,18 +4,18 @@ tasks:
   export-web:
     cmds:
       - cargo build 
-        --release 
+        --profile web-release 
         --target wasm32-unknown-unknown
+      - rm -rd out
       - wasm-bindgen 
         --out-name bloons 
         --out-dir ./out/game/ 
         --target web 
-        ./target/wasm32-unknown-unknown/release/bloons.wasm
-      - rm -rd out
+        ./target/wasm32-unknown-unknown/web-release/bloons.wasm
       - cp -r assets out/
       - cp -r web/ out/
     silent: true
   deploy-web:
     deps: [export-web]
     cmds:
-      - fly deploy
+      - fly deploy --local-only
