@@ -6,7 +6,7 @@ tasks:
       - cargo build 
         --profile web-release 
         --target wasm32-unknown-unknown
-      - rm -rd out
+      - rm -rf out
       - wasm-bindgen 
         --out-name bloons 
         --out-dir ./out/game/ 
