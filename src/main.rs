@@ -1,7 +1,10 @@
 use std::f32::consts::PI;
 
 use bevy::{
-    audio::PlaybackMode, prelude::*, render::texture::ImageSampler, sprite::collide_aabb::collide,
+    audio::PlaybackMode,
+    math::bounding::{Aabb2d, IntersectsVolume},
+    prelude::*,
+    render::texture::ImageSampler,
     window::PrimaryWindow,
 };
 use bevy_prng::ChaCha8Rng;
@@ -270,7 +273,7 @@ fn spritemap_fix(mut ev_asset: EventReader<AssetEvent<Image>>, mut assets: ResMu
 
 fn handle_mouse(
     mut commands: Commands,
-    mouse_input: Res<Input<MouseButton>>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
     query: Query<&Transform, With<Monkey>>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform)>,
@@ -346,13 +349,10 @@ fn check_for_collisions(
 
         // check collision with walls
         for (collider_entity, transform, collided_balloon) in &collider_query {
-            let collision = collide(
-                arrow_transform.translation,
-                arrow_size,
-                transform.translation,
-                transform.scale.truncate(),
-            );
-            if collision.is_some() && collided_balloon.is_some() {
+            let arrow_bounds = Aabb2d::new(arrow_transform.translation.xy(), arrow_size);
+            let balloon_bounds = Aabb2d::new(transform.translation.xy(), transform.scale.xy());
+
+            if arrow_bounds.intersects(&balloon_bounds) && collided_balloon.is_some() {
                 pop_events.send_default();
 
                 scoreboard.score += 1;
