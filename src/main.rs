@@ -39,7 +39,7 @@ fn main() {
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .add_event::<BalloonPopEvent>()
         // Configure how frequently our gameplay systems are run
-        .insert_resource(FixedTime::new_from_secs(1.0 / 60.0))
+        .insert_resource(Time::from_seconds(1.0 / 60.0))
         .add_systems(Startup, setup)
         // Add our gameplay simulation systems to the fixed timestep schedule
         .add_systems(
@@ -259,10 +259,10 @@ fn setup(
 }
 
 fn spritemap_fix(mut ev_asset: EventReader<AssetEvent<Image>>, mut assets: ResMut<Assets<Image>>) {
-    for ev in ev_asset.iter() {
-        if let AssetEvent::Created { handle } = ev {
-            if let Some(texture) = assets.get_mut(handle) {
-                texture.sampler_descriptor = ImageSampler::nearest()
+    for ev in ev_asset.read() {
+        if let AssetEvent::Added { id } = ev {
+            if let Some(texture) = assets.get_mut(*id) {
+                texture.sampler = ImageSampler::nearest()
             }
         }
     }
@@ -316,16 +316,16 @@ fn rotate_arrows(mut query: Query<(&mut Transform, &Velocity), With<Arrow>>) {
     }
 }
 
-fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>, time_step: Res<FixedTime>) {
+fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>, time_step: Res<Time>) {
     for (mut transform, velocity) in &mut query {
-        transform.translation.x += velocity.x * time_step.period.as_secs_f32();
-        transform.translation.y += velocity.y * time_step.period.as_secs_f32();
+        transform.translation.x += velocity.x * time_step.delta_seconds();
+        transform.translation.y += velocity.y * time_step.delta_seconds();
     }
 }
 
-fn apply_gravity(mut query: Query<&mut Velocity, With<Falling>>, time_step: Res<FixedTime>) {
+fn apply_gravity(mut query: Query<&mut Velocity, With<Falling>>, time_step: Res<Time>) {
     for mut velocity in &mut query {
-        velocity.y -= GRAVITY * time_step.period.as_secs_f32();
+        velocity.y -= GRAVITY * time_step.delta_seconds();
     }
 }
 
@@ -364,10 +364,11 @@ fn check_for_collisions(
 
 fn play_collision_sound(
     mut commands: Commands,
-    collision_events: EventReader<BalloonPopEvent>,
+    mut collision_events: EventReader<BalloonPopEvent>,
     sounds: Res<Sounds>,
 ) {
     if !collision_events.is_empty() {
+        collision_events.clear();
         commands.spawn(AudioBundle {
             source: sounds.balloon_pop.clone(),
             settings: PlaybackSettings {
