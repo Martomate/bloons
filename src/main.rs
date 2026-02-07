@@ -2,13 +2,13 @@ use std::f32::consts::PI;
 
 use bevy::{
     audio::PlaybackMode,
+    image::ImageSampler,
     math::bounding::{Aabb2d, IntersectsVolume},
     prelude::*,
-    render::texture::ImageSampler,
     window::PrimaryWindow,
 };
 use bevy_prng::ChaCha8Rng;
-use bevy_rand::{prelude::*, resource::GlobalEntropy};
+use bevy_rand::prelude::*;
 use rand_core::RngCore;
 
 // These constants are defined in `Transform` units.
@@ -96,9 +96,8 @@ struct Sounds {
 // This bundle is a collection of the components that define a "wall" in our game
 #[derive(Bundle)]
 struct WallBundle {
-    // You can nest bundles inside of other bundles like this
-    // Allowing you to compose their functionality
-    sprite_bundle: SpriteBundle,
+    sprite: Sprite,
+    transform: Transform,
     collider: Collider,
 }
 
@@ -143,21 +142,18 @@ impl WallBundle {
     // making our code easier to read and less prone to bugs when we change the logic
     fn new(location: WallLocation) -> WallBundle {
         WallBundle {
-            sprite_bundle: SpriteBundle {
-                transform: Transform {
-                    // We need to convert our Vec2 into a Vec3, by giving it a z-coordinate
-                    // This is used to determine the order of our sprites
-                    translation: location.position().extend(0.0),
-                    // The z-scale of 2D objects must always be 1.0,
-                    // or their ordering will be affected in surprising ways.
-                    // See https://github.com/bevyengine/bevy/issues/4149
-                    scale: location.size().extend(1.0),
-                    ..default()
-                },
-                sprite: Sprite {
-                    color: WALL_COLOR,
-                    ..default()
-                },
+            sprite: Sprite {
+                color: WALL_COLOR,
+                ..default()
+            },
+            transform: Transform {
+                // We need to convert our Vec2 into a Vec3, by giving it a z-coordinate
+                // This is used to determine the order of our sprites
+                translation: location.position().extend(0.0),
+                // The z-scale of 2D objects must always be 1.0,
+                // or their ordering will be affected in surprising ways.
+                // See https://github.com/bevyengine/bevy/issues/4149
+                scale: location.size().extend(1.0),
                 ..default()
             },
             collider: Collider,
@@ -171,14 +167,17 @@ struct Scoreboard {
     score: usize,
 }
 
+#[derive(Component)]
+struct ScoreText;
+
 // Add the game's entities to our world
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
+    mut rng: GlobalEntropy<ChaCha8Rng>,
 ) {
     // Camera
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d);
 
     // Sound
     let balloon_pop_sound = asset_server.load("sounds/balloon_pop.ogg");
@@ -188,46 +187,41 @@ fn setup(
 
     // Monkey
     commands.spawn((
-        SpriteBundle {
-            sprite: Sprite {
-                custom_size: Some(Vec2::new(1.0, 1.0)),
-                ..Default::default()
-            },
-            texture: asset_server.load("textures/monkey.png"),
-            transform: Transform {
-                translation: Vec3::new(LEFT_WALL + 120.0, 60.0, 0.0),
-                scale: Vec3::new(128.0, 128.0, 1.0),
-                ..default()
-            },
+        Sprite {
+            image: asset_server.load("textures/monkey.png"),
+            custom_size: Some(Vec2::new(1.0, 1.0)),
+            ..Default::default()
+        },
+        Transform {
+            translation: Vec3::new(LEFT_WALL + 120.0, 60.0, 0.0),
+            scale: Vec3::new(128.0, 128.0, 1.0),
             ..default()
         },
         Monkey,
     ));
 
     // Scoreboard
-    commands.spawn(
-        TextBundle::from_sections([
-            TextSection::new(
-                "Score: ",
-                TextStyle {
-                    font_size: SCOREBOARD_FONT_SIZE,
-                    color: TEXT_COLOR,
-                    ..default()
-                },
-            ),
-            TextSection::from_style(TextStyle {
-                font_size: SCOREBOARD_FONT_SIZE,
-                color: SCORE_COLOR,
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                top: SCOREBOARD_TEXT_PADDING,
+                left: SCOREBOARD_TEXT_PADDING,
                 ..default()
-            }),
-        ])
-        .with_style(Style {
-            position_type: PositionType::Absolute,
-            top: SCOREBOARD_TEXT_PADDING,
-            left: SCOREBOARD_TEXT_PADDING,
-            ..default()
-        }),
-    );
+            },
+            Text::default(),
+        ))
+        .with_child((
+            TextSpan::new("Score: "),
+            TextFont::from_font_size(SCOREBOARD_FONT_SIZE),
+            TextColor(TEXT_COLOR),
+        ))
+        .with_child((
+            TextSpan::new(""),
+            TextFont::from_font_size(SCOREBOARD_FONT_SIZE),
+            TextColor(SCORE_COLOR),
+            ScoreText,
+        ));
 
     // Walls
     commands.spawn(WallBundle::new(WallLocation::Left));
@@ -242,17 +236,14 @@ fn setup(
         );
 
         commands.spawn((
-            SpriteBundle {
-                sprite: Sprite {
-                    custom_size: Some(Vec2::new(1.0, 1.0)),
-                    ..Default::default()
-                },
-                texture: asset_server.load("textures/balloon.png"),
-                transform: Transform {
-                    translation: balloon_position.extend(0.0),
-                    scale: Vec3::new(32.0, 32.0, 1.0),
-                    ..default()
-                },
+            Sprite {
+                image: asset_server.load("textures/balloon.png"),
+                custom_size: Some(Vec2::new(1.0, 1.0)),
+                ..Default::default()
+            },
+            Transform {
+                translation: balloon_position.extend(0.0),
+                scale: Vec3::new(32.0, 32.0, 1.0),
                 ..default()
             },
             Balloon,
@@ -282,7 +273,7 @@ fn handle_mouse(
     if mouse_input.just_released(MouseButton::Left) {
         if let Some(mouse_pos) = q_windows.single().cursor_position() {
             let (camera, camera_transform) = q_camera.single();
-            if let Some(mouse_pos) = camera
+            if let Ok(mouse_pos) = camera
                 .viewport_to_world(camera_transform, mouse_pos)
                 .map(|ray| ray.origin.truncate())
             {
@@ -293,16 +284,12 @@ fn handle_mouse(
                 let speed = dir.length();
 
                 commands.spawn((
-                    SpriteBundle {
-                        sprite: Sprite {
-                            custom_size: Some(Vec2::new(1.0, 1.0)),
-                            ..Default::default()
-                        },
-                        texture: asset_server.load("textures/arrow.png"),
-                        transform: Transform::from_translation(monkey_pos)
-                            .with_scale(Vec3::new(32.0, 32.0, 1.0)),
-                        ..default()
+                    Sprite {
+                        image: asset_server.load("textures/arrow.png"),
+                        custom_size: Some(Vec2::new(1.0, 1.0)),
+                        ..Default::default()
                     },
+                    Transform::from_translation(monkey_pos).with_scale(Vec3::new(32.0, 32.0, 1.0)),
                     Arrow,
                     Velocity(dir.normalize() * speed.min(100.0) * 10.0),
                     Falling,
@@ -321,20 +308,23 @@ fn rotate_arrows(mut query: Query<(&mut Transform, &Velocity), With<Arrow>>) {
 
 fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>, time_step: Res<Time>) {
     for (mut transform, velocity) in &mut query {
-        transform.translation.x += velocity.x * time_step.delta_seconds();
-        transform.translation.y += velocity.y * time_step.delta_seconds();
+        transform.translation.x += velocity.x * time_step.delta_secs();
+        transform.translation.y += velocity.y * time_step.delta_secs();
     }
 }
 
 fn apply_gravity(mut query: Query<&mut Velocity, With<Falling>>, time_step: Res<Time>) {
     for mut velocity in &mut query {
-        velocity.y -= GRAVITY * time_step.delta_seconds();
+        velocity.y -= GRAVITY * time_step.delta_secs();
     }
 }
 
-fn update_scoreboard(scoreboard: Res<Scoreboard>, mut query: Query<&mut Text>) {
+fn update_scoreboard(
+    scoreboard: Res<Scoreboard>,
+    mut query: Query<&mut TextSpan, With<ScoreText>>,
+) {
     let mut text = query.single_mut();
-    text.sections[1].value = scoreboard.score.to_string();
+    text.0 = scoreboard.score.to_string();
 }
 
 fn check_for_collisions(
@@ -369,13 +359,13 @@ fn play_collision_sound(
 ) {
     if !collision_events.is_empty() {
         collision_events.clear();
-        commands.spawn(AudioBundle {
-            source: sounds.balloon_pop.clone(),
-            settings: PlaybackSettings {
+        commands.spawn((
+            AudioPlayer(sounds.balloon_pop.clone()),
+            PlaybackSettings {
                 mode: PlaybackMode::Despawn,
                 ..default()
             },
-        });
+        ));
     }
 }
 
