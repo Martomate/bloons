@@ -200,6 +200,8 @@ fn setup(
         Monkey,
     ));
 
+    let font = asset_server.load::<Font>("fonts/Verdana.ttf");
+
     // Scoreboard
     commands
         .spawn((
@@ -213,12 +215,20 @@ fn setup(
         ))
         .with_child((
             TextSpan::new("Score: "),
-            TextFont::from_font_size(SCOREBOARD_FONT_SIZE),
+            TextFont {
+                font: font.clone(),
+                font_size: SCOREBOARD_FONT_SIZE,
+                ..default()
+            },
             TextColor(TEXT_COLOR),
         ))
         .with_child((
             TextSpan::new(""),
-            TextFont::from_font_size(SCOREBOARD_FONT_SIZE),
+            TextFont {
+                font: font.clone(),
+                font_size: SCOREBOARD_FONT_SIZE,
+                ..default()
+            },
             TextColor(SCORE_COLOR),
             ScoreText,
         ));
