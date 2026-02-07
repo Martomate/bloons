@@ -11,7 +11,7 @@ opt-level = "z"
 lto = "thin"
 
 [dependencies]
-bevy = { version = "0.13", default-features = false, features = [
+bevy = { version = "0.14", default-features = false, features = [
     "bevy_asset",
     "bevy_audio",
     "bevy_ui",
@@ -19,9 +19,9 @@ bevy = { version = "0.13", default-features = false, features = [
     "png",
     "x11",
 ] }
-bevy_prng = { version = "0.6", features = ["rand_chacha"] }
-bevy_rand = "0.6"
-bevy_rapier2d = "0.25"
+bevy_prng = { version = "0.7", features = ["rand_chacha"] }
+bevy_rand = "0.7"
+bevy_rapier2d = "0.27"
 rand_core = "0.6.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

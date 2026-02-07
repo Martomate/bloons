@@ -23,10 +23,10 @@ const TOP_WALL: f32 = 300.;
 const SCOREBOARD_FONT_SIZE: f32 = 40.0;
 const SCOREBOARD_TEXT_PADDING: Val = Val::Px(5.0);
 
-const BACKGROUND_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
-const WALL_COLOR: Color = Color::rgb(0.8, 0.8, 0.8);
-const TEXT_COLOR: Color = Color::rgb(0.5, 0.5, 1.0);
-const SCORE_COLOR: Color = Color::rgb(1.0, 0.5, 0.5);
+const BACKGROUND_COLOR: Color = Color::srgb(0.9, 0.9, 0.9);
+const WALL_COLOR: Color = Color::srgb(0.8, 0.8, 0.8);
+const TEXT_COLOR: Color = Color::srgb(0.5, 0.5, 1.0);
+const SCORE_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
 
 const GRAVITY: f32 = 9.82 * 100.0;
 
@@ -61,7 +61,7 @@ fn main() {
                 rotate_arrows,
                 spritemap_fix,
                 update_scoreboard,
-                bevy::window::close_on_esc,
+                close_on_esc,
             ),
         )
         .run();
@@ -376,5 +376,21 @@ fn play_collision_sound(
                 ..default()
             },
         });
+    }
+}
+
+pub fn close_on_esc(
+    mut commands: Commands,
+    focused_windows: Query<(Entity, &Window)>,
+    input: Res<ButtonInput<KeyCode>>,
+) {
+    for (window, focus) in focused_windows.iter() {
+        if !focus.focused {
+            continue;
+        }
+
+        if input.just_pressed(KeyCode::Escape) {
+            commands.entity(window).despawn();
+        }
     }
 }
